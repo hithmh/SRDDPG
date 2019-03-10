@@ -100,12 +100,12 @@ class DDPG(object):
 
         q_ = self._build_c(self.S_, tf.stop_gradient(a_), tf.stop_gradient(d_), reuse=True, custom_getter=ema_getter)
         l_ = self._build_l(self.S_, tf.stop_gradient(a_), reuse=True, custom_getter=ema_getter)  # lyapunov 网络
-        self.cons_l = self._build_l(self.cons_S, tf.stop_gradient(cons_a), reuse=True)
+        self.cons_l = self._build_l(self.cons_S, cons_a, reuse=True)
         self.cons_l_ = self._build_l(self.cons_S_, cons_a_, reuse=True)
 
-        self.l_lambda = tf.reduce_mean(self.cons_l_ - self.cons_l + ALPHA3 * self.l_R)
+        self.l_lambda = self.labda *tf.reduce_mean(self.cons_l_ - self.cons_l + ALPHA3 * self.l_R)
         a_pre_loss = - tf.reduce_mean(self.q) # Original ddpg
-        a_loss = self.labda * self.l_lambda + tf.reduce_mean(self.q)
+        a_loss = self.l_lambda# + tf.reduce_mean(self.q)
         d_loss = tf.reduce_mean(self.q)
         self.apretrain = tf.train.AdamOptimizer(self.LR_A).minimize(a_pre_loss, var_list=a_params)
         self.atrain = tf.train.AdamOptimizer(self.LR_A).minimize(a_loss, var_list=a_params)#以learning_rate去训练，方向是minimize loss，调整列表参数，用adam
@@ -118,7 +118,8 @@ class DDPG(object):
             self.td_error = tf.losses.mean_squared_error(labels=q_target, predictions=self.q)
             self.l_error = tf.losses.mean_squared_error(labels=l_target, predictions=self.l)
             self.ctrain = tf.train.AdamOptimizer(self.LR_C).minimize(self.td_error, var_list=c_params)
-            self.ltrain = tf.train.AdamOptimizer(self.LR_C).minimize(self.l_error, var_list=l_params)
+            #self.ltrain = tf.train.AdamOptimizer(self.LR_C).minimize(self.l_error, var_list=l_params)
+            self.ltrain = tf.train.AdamOptimizer(self.LR_C).minimize(a_loss, var_list=l_params)
 
 
         self.sess.run(tf.global_variables_initializer())
@@ -161,7 +162,7 @@ class DDPG(object):
                                     self.cons_S_:cons_bs_, self.l_R:cons_blr}), \
                self.sess.run(self.td_error,
                              {self.S: bs, self.a: ba, self.R: br, self.S_: bs_, self.LR_C: LR_C, self.d: bd}), \
-               self.sess.run(self.l_error, {self.S: cons_bs, self.a: cons_ba, self.S_:cons_bs_, self.l_R: cons_blr})
+               self.sess.run(self.l_lambda, {self.S: bs, self.a: ba, self.S_:bs_, self.l_R: blr})
 
     def evaulate_lyapunov(self, s):
         return self.sess.run(self.l, {self.S:s[np.newaxis, :]})
@@ -485,7 +486,7 @@ for i in range(MAX_EPISODES):
         # IF Dreamer_update=True, GET INFORMATION OF THE S,A,R1,S_
         # 得到的是真实的 s,a->s_ 和 r
         # 主要是判断是否游戏结束
-        s_, r, done, hit = env.step(a,d)             # S_=ENV(S,A), R=REWARD(S_)
+        s_, r, done, hit = env.step(a)             # S_=ENV(S,A), R=REWARD(S_)
 
         l_r = np.square(5*s_[0]/env.x_threshold) + np.square(10*s_[2]/env.theta_threshold_radians)
 
